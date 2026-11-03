@@ -290,7 +290,6 @@ func orchestrateCloudInfrastructure(
 	}
 
 	topologyUpdated := false
-	loggedAfterDiscovery := false
 
 	syncDomains := func(newSN, newCF string) {
 		cleanSN := cleanHost(newSN)
@@ -366,7 +365,6 @@ func orchestrateCloudInfrastructure(
 		log.Printf("[Runtime] Synchronized Topology: SeenodeDomain=%q | CloudflareDomain=%q | Region=%q",
 			seenodeDomain, customDomain, region)
 		sup.LogProvisioningLink("")
-		loggedAfterDiscovery = true
 	}
 
 	var customDomInfo *SeenodeCustomDomainInfo
@@ -424,13 +422,13 @@ func orchestrateCloudInfrastructure(
 				if valid && updatedInfo != nil {
 					cf.PromoteCustomDomainToOrangeCloud(ctx, updatedInfo.Domain, updatedInfo.CNAMETarget, cnameRecordID)
 				} else if ctx.Err() == nil {
-					go watchAndPromoteCustomDomain(ctx, sn, cf, customDomInfo, cnameRecordID)
+					go watchAndPromoteCustomDomain(ctx, sup, sn, cf, customDomInfo, cnameRecordID)
 				}
 			} else {
-				go watchAndPromoteCustomDomain(ctx, nil, cf, customDomInfo, cnameRecordID)
+				go watchAndPromoteCustomDomain(ctx, sup, nil, cf, customDomInfo, cnameRecordID)
 			}
 		} else if cf.GetZoneID() != "" {
-			go watchAndPromoteCustomDomain(ctx, sn, cf, customDomInfo, cnameRecordID)
+			go watchAndPromoteCustomDomain(ctx, sup, sn, cf, customDomInfo, cnameRecordID)
 		}
 	}
 
@@ -438,7 +436,7 @@ func orchestrateCloudInfrastructure(
 		sn.TuneComputeAndNetwork(ctx)
 	}
 
-	if ctx.Err() == nil && !loggedAfterDiscovery && (topologyUpdated || sn != nil || cf != nil) {
+	if ctx.Err() == nil {
 		log.Printf("[Runtime] Synchronized Topology: SeenodeDomain=%q | CloudflareDomain=%q | Region=%q",
 			seenodeDomain, customDomain, region)
 		sup.LogProvisioningLink("")
@@ -447,6 +445,7 @@ func orchestrateCloudInfrastructure(
 
 func watchAndPromoteCustomDomain(
 	parent context.Context,
+	sup *Supervisor,
 	sn *SeenodeClient,
 	cf *CloudflareClient,
 	info *SeenodeCustomDomainInfo,
@@ -469,11 +468,17 @@ func watchAndPromoteCustomDomain(
 					log.Printf("[Seenode] ✓ Deferred TLS & Route validation completed for %s (%s)",
 						latest.Domain, latest.CertificateStatus)
 					cf.PromoteCustomDomainToOrangeCloud(ctx, latest.Domain, latest.CNAMETarget, cnameRecordID)
+					if sup != nil {
+						sup.LogProvisioningLink("")
+					}
 					return
 				}
 			} else if probeCustomDomainTLS(ctx, info.Domain, info.CNAMETarget) {
 				log.Printf("[Seenode] ✓ Direct Origin TLS + Route Identity verified for %s", info.Domain)
 				cf.PromoteCustomDomainToOrangeCloud(ctx, info.Domain, info.CNAMETarget, cnameRecordID)
+				if sup != nil {
+					sup.LogProvisioningLink("")
+				}
 				return
 			}
 		}
